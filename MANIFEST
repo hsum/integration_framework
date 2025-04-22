@@ -1,0 +1,6 @@
+integrations:
+  - hello_world
+  - weather_news
+  - company_a_salesforce
+  - company_b_salesforce
+
