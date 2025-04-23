@@ -1,38 +1,61 @@
 import logging
-from datetime import datetime, UTC
-from typing import Optional
+import backoff
+import time
+
+logger = logging.getLogger(__name__)
 
 class SupportManager:
-    """Manages issue reporting and notifications for integrations.
+    def __init__(self):
+        self.backoff_state = {}
+        self.initial_delay = 1.0
+        self.multiplier = 2.0
+        self.max_delay = 60.0
 
-    Maintains a list of issues and provides methods to report issues and send notifications.
-    """
-    def __init__(self) -> None:
-        """Initialize the SupportManager with an empty issues list."""
-        self.issues: list[dict] = []
-        self.logger = logging.getLogger(__name__)
+    def _should_log(self, key: str, current_time: float) -> bool:
+        """Return True if enough time has passed since the last log."""
+        last_time, retry_count = self.backoff_state.get(key, (0.0, 0))
+        delay = min(self.initial_delay * (self.multiplier ** retry_count), self.max_delay)
+        logger.debug(f"Key: {key}, Current time: {current_time}, Last time: {last_time}, Retry count: {retry_count}, Delay: {delay}")
+        if current_time < last_time + delay:
+            self.backoff_state[key] = (last_time, 0)  # Reset retry_count
+            return False
+        return True
 
-    def report_issue(self, issue_type: str, message: str, integration_name: Optional[str] = None) -> None:
-        """Report an issue and optionally send to an external system.
+    def notify(self, message: str, integration_name: str) -> bool:
+        """Notify about an integration event with backoff."""
+        key = f"notify_{integration_name}"
+        return self.log_with_backoff(key, f"Notification for {integration_name}: {message}")
 
+    def report_issue(self, integration_name: str, error: str) -> bool:
+        """Report an issue for an integration with backoff."""
+        key = f"issue_{integration_name}"
+        return self.log_with_backoff(key, f"Issue in {integration_name}: {error}", level="error")
+    
+    @backoff.on_predicate(
+        backoff.expo,
+        predicate=lambda result: not result[0],
+        max_tries=3,
+        max_time=60.0,
+        factor=1.0,
+        logger=None,
+        on_success=lambda details: details["args"][0].backoff_state.update({details["args"][1]: (details["value"][1], 0)}),
+        on_backoff=lambda details: logger.debug(f"Backoff retry: {details}")
+    )
+    def log_with_backoff(self, key: str, message: str, level: str = "info") -> tuple[bool, float]:
+        """Log a message with exponential backoff to reduce frequency over time.
+        
         Args:
-            issue_type: Type of issue (e.g., "config", "runtime").
-            message: Issue message.
-            integration_name: Name of the integration, if applicable.
+            key: Unique identifier for the message (e.g., error type).
+            message: The message to log.
+            level: Logging level ('debug', 'info', 'warning', 'error', 'critical').
+        
+        Returns:
+            Tuple of (bool, float): (True if logged, current time).
         """
-        issue = {
-            "type": issue_type,
-            "message": message,
-            "integration_name": integration_name,
-            "timestamp": datetime.now(UTC).isoformat()
-        }
-        self.issues.append(issue)
-        self.logger.error(f"Issue reported [{issue_type}]: {message} (Integration: {integration_name or 'N/A'})")
-
-    def notify(self, message: str) -> None:
-        """Send a notification message.
-
-        Args:
-            message: Notification message to send.
-        """
-        self.logger.info(f"Notification: {message}")
+        current_time = time.time()
+        logger.debug(f"Attempting log: Key: {key}, Message: {message}, Level: {level}")
+        if self._should_log(key, current_time):
+            log_func = getattr(logger, level.lower(), logger.info)
+            log_func(message)
+            return (True, current_time)
+        return (False, current_time)

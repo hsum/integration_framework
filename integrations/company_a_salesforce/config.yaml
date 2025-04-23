@@ -1,4 +1,9 @@
-enabled: false
-instance_url: ${SALESFORCE_INSTANCE_URL}
-access_token: ${SALESFORCE_ACCESS_TOKEN}
-
+enabled: true
+http_client:
+  initial_delay: 0.2
+  max_retries: 5
+  max_delay: 30.0
+  multiplier: 2.0
+  jitter_factor: 0.1
+  timeout: 30
+# Add other integration-specific settings as needed
