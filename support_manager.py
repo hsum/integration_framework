@@ -3,6 +3,7 @@ import backoff
 import time
 
 logger = logging.getLogger(__name__)
+logger.propagate = True
 
 class SupportManager:
     def __init__(self):
@@ -17,19 +18,27 @@ class SupportManager:
         delay = min(self.initial_delay * (self.multiplier ** retry_count), self.max_delay)
         logger.debug(f"Key: {key}, Current time: {current_time}, Last time: {last_time}, Retry count: {retry_count}, Delay: {delay}")
         if current_time < last_time + delay:
-            self.backoff_state[key] = (last_time, 0)  # Reset retry_count
+            self.backoff_state[key] = (last_time, 0)
             return False
         return True
 
-    def notify(self, message: str, integration_name: str) -> bool:
+    def log(self, message: str, level: str = "info") -> bool:
+        """Log a message without backoff."""
+        log_func = getattr(logger, level.lower(), logger.info)
+        log_func(message)
+        return True
+
+    def notify(self, message: str, integration_name: str = None) -> bool:
         """Notify about an integration event with backoff."""
-        key = f"notify_{integration_name}"
-        return self.log_with_backoff(key, f"Notification for {integration_name}: {message}")
+        key = f"notify_{integration_name or 'default'}"
+        result, _ = self.log_with_backoff(key, message)
+        return result
 
     def report_issue(self, integration_name: str, error: str) -> bool:
         """Report an issue for an integration with backoff."""
         key = f"issue_{integration_name}"
-        return self.log_with_backoff(key, f"Issue in {integration_name}: {error}", level="error")
+        result, _ = self.log_with_backoff(key, f"Issue in {integration_name}: {error}", level="error")
+        return result
     
     @backoff.on_predicate(
         backoff.expo,
@@ -42,16 +51,7 @@ class SupportManager:
         on_backoff=lambda details: logger.debug(f"Backoff retry: {details}")
     )
     def log_with_backoff(self, key: str, message: str, level: str = "info") -> tuple[bool, float]:
-        """Log a message with exponential backoff to reduce frequency over time.
-        
-        Args:
-            key: Unique identifier for the message (e.g., error type).
-            message: The message to log.
-            level: Logging level ('debug', 'info', 'warning', 'error', 'critical').
-        
-        Returns:
-            Tuple of (bool, float): (True if logged, current time).
-        """
+        """Log a message with exponential backoff to reduce frequency over time."""
         current_time = time.time()
         logger.debug(f"Attempting log: Key: {key}, Message: {message}, Level: {level}")
         if self._should_log(key, current_time):

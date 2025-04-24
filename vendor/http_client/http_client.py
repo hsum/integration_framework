@@ -29,11 +29,7 @@ class HttpClient:
     )
     def request(self, method: str, url: str, headers: dict[str, str] | None = None, 
                 data=None) -> tuple[bool, HttpResponse]:
-        """Make an HTTP request with exponential backoff for 429 responses.
-        
-        Returns:
-            Tuple (bool, HttpResponse): (True if retry needed, response object)
-        """
+        """Make an HTTP request with exponential backoff for 429 responses."""
         try:
             response = self.client.request(method, url, headers=headers, content=data)
             is_retryable = response.status_code == 429

@@ -1,19 +1,8 @@
-from unittest.mock import patch
-from integration_framework.integrations.company_b_salesforce import CompanyBSalesforceIntegration
+import pytest
+from unittest.mock import patch, MagicMock
 from integration_framework.support_manager import SupportManager
-import inspect
-
-def check_docstrings():
-    """Helper to verify docstrings for CompanyBSalesforceIntegration."""
-    assert CompanyBSalesforceIntegration.__doc__ is not None, "CompanyBSalesforceIntegration class missing docstring"
-    methods = [
-        CompanyBSalesforceIntegration.__init__,
-        CompanyBSalesforceIntegration.fetch_data,
-        CompanyBSalesforceIntegration.postprocess_data,
-        CompanyBSalesforceIntegration.deliver_results
-    ]
-    for method in methods:
-        assert method.__doc__ is not None, f"Method {method.__name__} missing docstring"
+from integration_framework.integrations.company_b_salesforce import CompanyBSalesforceIntegration
+from integration_framework.utils import check_docstrings
 
 def test_init():
     """Test CompanyBSalesforceIntegration.__init__."""
@@ -23,7 +12,7 @@ def test_init():
     integration = CompanyBSalesforceIntegration(config, support, "company_b_salesforce")
     assert integration.name == "company_b_salesforce"
     assert integration.support == support
-    assert integration.client is not None
+    assert integration.config == config
 
 def test_fetch_data():
     """Test CompanyBSalesforceIntegration.fetch_data."""

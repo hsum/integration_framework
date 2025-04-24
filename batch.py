@@ -15,7 +15,7 @@ import csv
 
 import yaml
 from integration_framework.integrations import Integration
-from integration_framework.sql_executor import SQLQueryManager
+from integration_framework.sql_query_manager import SQLQueryManager
 from integration_framework.support_manager import SupportManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
