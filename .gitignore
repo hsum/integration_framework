@@ -22,4 +22,5 @@ telemetry.db
 cache/*
 output/*
 docs/*
+validation_cache.json
 
