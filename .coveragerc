@@ -1,0 +1,16 @@
+[run]
+source = 
+    /home/hsum/D/integration_framework
+omit = 
+    */vendor/*
+    */tests/*
+    */__pycache__/*
+    */integrations/*/tests/*
+
+[report]
+exclude_lines = 
+    pragma: no cover
+    if __name__ == .__main__.:
+    def __repr__
+    def __str__
+    raise NotImplementedError
