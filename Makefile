@@ -6,7 +6,7 @@ install:
 	python -m pip install -r requirements.txt
 
 test:
-	python -m pytest --cov=integration_framework --cov-report=html tests integrations/*/tests/
+	python -m pytest --cov=integration_framework --cov-report=html tests integration_framework/integrations/*/tests/
 
 lint:
 	python -m ruff check .
@@ -18,25 +18,25 @@ typecheck:
 	python -m mypy .
 
 run:
-	python -m batch --run-all
+	python -m integration_framework.batch run
 
 run-single:
-	python -m batch --run-single
+	python -m integration_framework.batch run --name $(name)
 
 run-by-tag:
-	python -m batch --run-by-tag
+	python -m integration_framework.batch run --tag $(tag)
 
 run-asyncio:
-	python -m batch --run-all --parallel asyncio
+	python -m integration_framework.batch run --parallel asyncio
 
 run-multiprocessing:
-	python -m batch --run-all --parallel multiprocessing
+	python -m integration_framework.batch run --parallel multiprocessing
 
 validate:
-	python -m batch --validate
+	python -m integration_framework.batch validate
 
 report:
-	python -m batch --report $(shell date +%Y-%m)
+	python -m integration_framework.batch generate-telemetry-report --period $(shell date +%Y-%m)
 
 graph:
 	python generate_graph.py > process_graph.dot
@@ -50,4 +50,3 @@ clean:
 	rm -rf *.egg-info
 	rm -rf output/*.yaml
 	rm -f process_graph.dot process_graph.png
-

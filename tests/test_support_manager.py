@@ -41,9 +41,9 @@ def test_report_issue_with_backoff(support_manager, caplog):
     integration_framework.utils.check_docstrings()
     caplog.set_level(logging.ERROR)
     with patch("time.time", return_value=1000.0):
-        result = support_manager.report_issue("test_integration", "Test error")
+        result = support_manager.report_issue("bug", "Test error", "test_integration")
         assert result is True
-        assert "Issue in test_integration: Test error" in caplog.text
+        assert "Issue in test_integration: Bug: Test error" in caplog.text
         assert "issue_test_integration" in support_manager.backoff_state
 
 def test_utils_import():
@@ -67,9 +67,9 @@ def test_report_issue(support_manager, caplog):
     integration_framework.utils.check_docstrings()
     caplog.set_level(logging.ERROR)
     with patch("time.time", return_value=1000.0):
-        result = support_manager.report_issue("test_integration", "Direct test error")
+        result = support_manager.report_issue("bug", "Direct test error", "test_integration")
         assert result is True
-        assert "Issue in test_integration: Direct test error" in caplog.text
+        assert "Issue in test_integration: Bug: Direct test error" in caplog.text
         assert "issue_test_integration" in support_manager.backoff_state
 
 def test_log(support_manager, caplog):

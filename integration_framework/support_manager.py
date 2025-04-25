@@ -34,10 +34,19 @@ class SupportManager:
         result, _ = self.log_with_backoff(key, message)
         return result
 
-    def report_issue(self, integration_name: str, error: str) -> bool:
-        """Report an issue for an integration with backoff."""
+    def report_issue(self, issue_type: str, message: str, integration_name: str) -> bool:
+        """Report an issue for an integration with backoff.
+
+        Args:
+            issue_type (str): Type of issue (e.g., 'bug', 'feature').
+            message (str): Description of the issue.
+            integration_name (str): Name of the related integration.
+
+        Returns:
+            bool: True if the issue was logged, False if backoff prevented logging.
+        """
         key = f"issue_{integration_name}"
-        result, _ = self.log_with_backoff(key, f"Issue in {integration_name}: {error}", level="error")
+        result, _ = self.log_with_backoff(key, f"Issue in {integration_name}: {issue_type.capitalize()}: {message}", level="error")
         return result
     
     @backoff.on_predicate(

@@ -44,17 +44,17 @@ def test_db(tmp_path):
     return mock_conn
 
 def test_init(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         assert mgr is not None
 
 def test_enter(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         assert mgr.cursor is not None
 
 def test_exit(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         pass
     assert mgr.connection is None
@@ -64,7 +64,7 @@ def test_exit(test_db):
     ([], "SELECT id, timestamp FROM telemetry")
 ])
 def test_execute_query(test_db, params, query):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         results = list(mgr.execute_query(query, params))
     assert isinstance(results, list)
@@ -72,7 +72,7 @@ def test_execute_query(test_db, params, query):
         assert isinstance(results[0], dict)
 
 def test_execute_query_context_error(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     try:
         with SQLQueryManager(":memory:"):
             raise ValueError("Test error")
@@ -84,7 +84,7 @@ def test_execute_query_context_error(test_db):
     ([], "SELECT id, timestamp FROM telemetry", ["id", "timestamp"])
 ])
 def test_execute_query_as_namedtuple(test_db, params, query, expected_fields):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         results = list(mgr.execute_query_as_namedtuple(query, params))
     assert isinstance(results, list)
@@ -92,13 +92,13 @@ def test_execute_query_as_namedtuple(test_db, params, query, expected_fields):
         assert all(hasattr(row, field) for row in results for field in expected_fields)
 
 def test_execute_query_as_namedtuple_empty(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     with SQLQueryManager(":memory:") as mgr:
         results = list(mgr.execute_query_as_namedtuple("SELECT id FROM telemetry WHERE id = ?", [999]))
     assert results == []
 
 def test_execute_query_as_namedtuple_context_error(test_db):
-    from sql_query_manager import SQLQueryManager
+    from integration_framework.sql_query_manager import SQLQueryManager
     try:
         with SQLQueryManager(":memory:"):
             raise ValueError("Test error")

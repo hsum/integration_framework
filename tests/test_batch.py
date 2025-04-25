@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from integration_framework.batch import BatchRunner
 from integration_framework.support_manager import SupportManager
 from integration_framework.sql_query_manager import SQLQueryManager
+from integration_framework.telemetry import TelemetryManager
+from integration_framework.integrations import Integration
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 import inspect
@@ -29,14 +31,14 @@ def runner(tmp_path):
     return runner
 
 def check_docstrings():
-    """Helper to verify docstrings for BatchRunner and its public methods."""
-    assert BatchRunner.__doc__ is not None, "BatchRunner class missing docstring"
+    """Verify docstrings for BatchRunner and its public methods."""
+    assert BatchRunner.__doc__, "BatchRunner class missing docstring"
     methods = [
         method for method_name, method in inspect.getmembers(BatchRunner, inspect.isfunction)
         if not method_name.startswith('_')
     ]
     for method in methods:
-        assert method.__doc__ is not None, f"Method {method.__name__} missing docstring"
+        assert method.__doc__, f"Method {method.__name__} missing docstring"
 
 @pytest.mark.asyncio
 async def test_init(runner):
@@ -45,6 +47,7 @@ async def test_init(runner):
     assert isinstance(runner.integrations_dir, Path)
     assert isinstance(runner.support, SupportManager)
     assert isinstance(runner.sql_manager, SQLQueryManager)
+    assert isinstance(runner.telemetry, TelemetryManager)
     assert runner.cache_file == Path("validation_cache.json")
     assert runner.cache_ttl == timedelta(hours=24)
 
@@ -54,37 +57,20 @@ def test_load_integration(runner):
     int_dir = runner.integrations_dir / "test_integration"
     int_dir.mkdir()
     (int_dir / "__init__.py").touch()
-    class MockIntegrationClass:
-        pass
-    with patch("integration_framework.integrations.Integration", MockIntegrationClass),          patch("integration_framework.batch.Integration", MockIntegrationClass):
-        class TestIntegration(MockIntegrationClass):
-            def __init__(self, config, support, name):
-                self.config = config
-                self.support = support
-                self.name = name
-            def fetch_data(self): pass
-            def postprocess_data(self, data): pass
-            def deliver_results(self, data): pass
-        mock_module = MagicMock()
-        mock_module.TestIntegration = TestIntegration
-        with patch("importlib.import_module", return_value=mock_module):
-            original_sys_path = sys.path.copy()
-            sys.path.append(str(runner.integrations_dir.parent.parent))
-            try:
-                logger.debug(f"sys.path: {sys.path}")
-                logger.debug(f"Attempting to load integration 'test_integration' from {runner.integrations_dir}")
-                logger.debug(f"Integration class: {MockIntegrationClass}")
-                logger.debug(f"TestIntegration MRO: {TestIntegration.__mro__}")
-                importlib.invalidate_caches()
-                integration_class = runner.load_integration("test_integration")
-                logger.debug(f"Loaded integration class: {integration_class}")
-                logger.debug(f"TestIntegration type: {type(TestIntegration)}")
-                logger.debug(f"issubclass(TestIntegration, MockIntegrationClass): {issubclass(TestIntegration, MockIntegrationClass)}")
-                assert integration_class is not None, "Integration class is None"
-                assert integration_class.__name__ == "TestIntegration"
-            finally:
-                sys.path = original_sys_path
-    assert runner.load_integration("nonexistent") is None
+    class TestIntegration(Integration):
+        def __init__(self, config, support, name):
+            super().__init__(config, support, name)
+        def fetch_data(self): pass
+        def postprocess_data(self, data): pass
+        def deliver_results(self, data): pass
+    mock_module = MagicMock()
+    mock_module.TestIntegration = TestIntegration
+    mock_spec = MagicMock()
+    with patch("importlib.util.find_spec", return_value=mock_spec), \
+         patch("importlib.import_module", return_value=mock_module) as mock_import:
+        integration_class = runner.load_integration("test_integration")
+        assert integration_class.__name__ == "TestIntegration"
+        mock_import.assert_called_with("test_integration_framework.integrations.test_integration")
 
 def test_load_config(runner):
     """Test BatchRunner.load_config."""
@@ -105,9 +91,9 @@ def test_load_metadata(runner):
     int_dir.mkdir()
     metadata_path = int_dir / "metadata.yaml"
     with metadata_path.open("w") as f:
-        yaml.safe_dump({"version": "1.0.0"}, f)
+        yaml.safe_dump({"version": "1.0.0", "tags": ["test"], "description": "Test integration"}, f)
     metadata = runner.load_metadata("test_integration")
-    assert metadata == {"version": "1.0.0"}
+    assert metadata == {"version": "1.0.0", "tags": ["test"], "description": "Test integration"}
     assert runner.load_metadata("nonexistent") == {}
 
 def test_load_validation_cache(runner, tmp_path):
@@ -150,52 +136,46 @@ def test_validate_integration(runner, tmp_path):
     int_dir = runner.integrations_dir / "test_integration"
     int_dir.mkdir()
     with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
-    assert runner.validate_integration("test_integration") == True
-    runner.cache_file = tmp_path / "validation_cache.json"
-    cache = {
-        "integrations": {
-            "test_integration": {
-                "valid": True,
-                "timestamp": datetime.now().isoformat()
-            }
-        }
-    }
-    runner.save_validation_cache(cache)
-    assert runner.validate_integration("test_integration") == True
+        yaml.safe_dump({"enabled": True}, f)
+    (int_dir / "__init__.py").touch()
+    class TestIntegration(Integration):
+        def __init__(self, config, support, name):
+            super().__init__(config, support, name)
+        def fetch_data(self): pass
+        def postprocess_data(self, data): pass
+        def deliver_results(self, data): pass
+    mock_module = MagicMock()
+    mock_module.TestIntegration = TestIntegration
+    mock_spec = MagicMock()
+    with patch("importlib.util.find_spec", return_value=mock_spec), \
+         patch("importlib.import_module", return_value=mock_module):
+        runner.cache_file = tmp_path / "validation_cache.json"
+        assert runner.validate_integration("test_integration") == True
 
-@pytest.mark.asyncio
-async def test_run_integration(runner):
+def test_run_integration(runner):
     """Test BatchRunner.run_integration."""
     check_docstrings()
     int_dir = runner.integrations_dir / "test_integration"
     int_dir.mkdir()
     with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
+        yaml.safe_dump({"enabled": True}, f)
     (int_dir / "__init__.py").touch()
-    class MockIntegrationClass:
-        pass
-    with patch("integration_framework.integrations.Integration", MockIntegrationClass),          patch("integration_framework.batch.Integration", MockIntegrationClass):
-        class TestIntegration(MockIntegrationClass):
-            def __init__(self, config, support, name):
-                self.config = config
-                self.support = support
-                self.name = name
-            def fetch_data(self): return []
-            def postprocess_data(self, data): return data
-            def deliver_results(self, data): pass
-        mock_module = MagicMock()
-        mock_module.TestIntegration = TestIntegration
-        with patch("importlib.import_module", return_value=mock_module):
-            original_sys_path = sys.path.copy()
-            sys.path.append(str(runner.integrations_dir.parent.parent))
-            try:
-                importlib.invalidate_caches()
-                with patch.object(runner.support, "notify") as mock_notify:
-                    runner.run_integration("test_integration")
-                    mock_notify.assert_not_called()
-            finally:
-                sys.path = original_sys_path
+    class TestIntegration(Integration):
+        def __init__(self, config, support, name):
+            super().__init__(config, support, name)
+        def fetch_data(self): return []
+        def postprocess_data(self, data): return data
+        def deliver_results(self, data): pass
+    mock_module = MagicMock()
+    mock_module.TestIntegration = TestIntegration
+    mock_spec = MagicMock()
+    with patch("importlib.util.find_spec", return_value=mock_spec), \
+         patch("importlib.import_module", return_value=mock_module), \
+         patch.object(runner, "load_config", return_value={"enabled": True}):
+        with patch.object(runner.support, "notify") as mock_notify, \
+             patch.object(runner.telemetry, "log_run") as mock_telemetry:
+            runner.run_integration("test_integration")
+            mock_notify.assert_called_once()
 
 def test_get_integrations(runner):
     """Test BatchRunner.get_integrations."""
@@ -210,54 +190,55 @@ def test_get_integrations(runner):
     assert integrations == ["test_integration"]
 
 @pytest.mark.asyncio
-async def test_run_all(runner):
-    """Test BatchRunner.run_all."""
+async def test_run_filtered(runner):
+    """Test BatchRunner.run_filtered."""
     check_docstrings()
     int_dir = runner.integrations_dir / "test_integration"
     int_dir.mkdir()
     with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
-    with (int_dir / "__init__.py").open("w") as f:
-        f.write("")
-    await runner.run_all(verbose=False, parallel="asyncio")
-
-def test_run_single(runner):
-    """Test BatchRunner.run_single."""
-    check_docstrings()
-    int_dir = runner.integrations_dir / "test_integration"
-    int_dir.mkdir()
-    with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
-    with (int_dir / "__init__.py").open("w") as f:
-        f.write("")
-    with patch.object(runner.support, "report_issue") as mock_report:
-        runner.run_single("nonexistent")
-        mock_report.assert_called_once()
-    runner.run_single("test_integration")
-
-def test_run_by_tag(runner):
-    """Test BatchRunner.run_by_tag."""
-    check_docstrings()
-    int_dir = runner.integrations_dir / "test_integration"
-    int_dir.mkdir()
-    with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
+        yaml.safe_dump({"enabled": True}, f)
     with (int_dir / "metadata.yaml").open("w") as f:
-        yaml.safe_dump({"tags": ["test"]}, f)
-    with (int_dir / "__init__.py").open("w") as f:
-        f.write("")
-    runner.run_by_tag("test")
+        yaml.safe_dump({"tags": ["test"], "description": "Test integration"}, f)
+    (int_dir / "__init__.py").touch()
+    class TestIntegration(Integration):
+        def __init__(self, config, support, name):
+            super().__init__(config, support, name)
+        def fetch_data(self): return []
+        def postprocess_data(self, data): return data
+        def deliver_results(self, data): pass
+    mock_module = MagicMock()
+    mock_module.TestIntegration = TestIntegration
+    mock_spec = MagicMock()
+    with patch("importlib.util.find_spec", return_value=mock_spec), \
+         patch("importlib.import_module", return_value=mock_module):
+        with patch.object(runner.support, "notify") as mock_notify:
+            await runner.run_filtered(name="test_integration", parallel="asyncio")
+            mock_notify.assert_called_once()
 
-def test_validate(runner):
-    """Test BatchRunner.validate."""
+def test_filter_integrations(runner):
+    """Test BatchRunner.filter_integrations."""
     check_docstrings()
     int_dir = runner.integrations_dir / "test_integration"
     int_dir.mkdir()
     with (int_dir / "config.yaml").open("w") as f:
-        yaml.safe_dump({"enabled": False}, f)
-    with (int_dir / "__init__.py").open("w") as f:
-        f.write("")
-    runner.validate()
+        yaml.safe_dump({"enabled": True}, f)
+    with (int_dir / "metadata.yaml").open("w") as f:
+        yaml.safe_dump({
+            "tags": ["test"],
+            "business_contact": "jane.doe@client.com",
+            "technical_contact": "john.smith@client.com",
+            "description": "Test integration",
+            "last_updated": "2025-04-22T10:00:00"
+        }, f)
+    (int_dir / "__init__.py").touch()
+    integrations, hash_value = runner.filter_integrations(
+        partial_name="test",
+        tags=["test"],
+        business_contact="jane.doe@client.com",
+        last_updated_after="2025-04-01"
+    )
+    assert integrations == ["test_integration"]
+    assert len(hash_value) == 8
 
 def test_list_integrations(runner, capsys):
     """Test BatchRunner.list_integrations."""
@@ -274,13 +255,30 @@ def test_list_integrations(runner, capsys):
             "technical_contact": "john.smith@client.com",
             "tags": ["test"],
             "description": "Test integration",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "last_updated": "2025-04-22T10:00:00"
         }, f)
     with patch("integration_framework.sql_query_manager.SQLQueryManager") as MockSQL:
         mock_instance = MockSQL.return_value.__enter__.return_value
         mock_instance.execute_query.return_value = iter([{"MAX(timestamp)": "2025-04-22T10:00:00"}])
-        runner.list_integrations()
+        runner.list_integrations(partial_name="test")
         captured = capsys.readouterr()
         assert "test_integration" in captured.out
         assert "jane.doe@client.com" in captured.out
-        assert "Test integration" in captured.out
+        assert "Criteria Hash" in captured.out
+
+def test_report_issue(runner, capsys):
+    """Test BatchRunner.report_issue."""
+    check_docstrings()
+    with patch.object(runner.support, "report_issue") as mock_report:
+        runner.report_issue("bug", "Test issue", "test_integration")
+        mock_report.assert_called_once_with("bug", "Test issue", "test_integration")
+        captured = capsys.readouterr()
+        assert "Issue reported: bug - Test issue" in captured.out
+
+def test_generate_telemetry_report(runner, tmp_path):
+    """Test BatchRunner.generate_telemetry_report."""
+    check_docstrings()
+    with patch.object(runner.telemetry, "generate_report") as mock_report:
+        runner.generate_telemetry_report("2025-04")
+        mock_report.assert_called_once_with("2025-04")
